@@ -4,7 +4,6 @@ import static hudson.Util.fixEmpty;
 
 import java.io.File;
 import java.io.IOException;
-import java.text.ParseException;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
@@ -22,7 +21,7 @@ import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
-import hudson.AbortException;
+import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -30,9 +29,7 @@ import hudson.Util;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
 import hudson.model.BuildListener;
-import hudson.model.Computer;
 import hudson.model.Node;
-import hudson.model.ParametersAction;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.plugins.tfs.actions.CheckoutAction;
@@ -42,7 +39,6 @@ import hudson.plugins.tfs.model.Project;
 import hudson.plugins.tfs.model.WorkspaceConfiguration;
 import hudson.plugins.tfs.model.Server;
 import hudson.plugins.tfs.model.ChangeSet;
-import hudson.plugins.tfs.util.BuildVariableResolver;
 import hudson.plugins.tfs.util.BuildWorkspaceConfigurationRetriever;
 import hudson.plugins.tfs.util.BuildWorkspaceConfigurationRetriever.BuildWorkspaceConfiguration;
 import hudson.scm.ChangeLogParser;
@@ -86,7 +82,6 @@ public class TeamFoundationServerScm extends SCM {
     
     private TeamFoundationServerRepositoryBrowser repositoryBrowser;
 
-    private transient String normalizedWorkspaceName;
     private transient String workspaceChangesetVersion;
     
     private static final Logger logger = Logger.getLogger(TeamFoundationServerScm.class.getName());
@@ -154,40 +149,28 @@ public class TeamFoundationServerScm extends SCM {
     }    
     // Bean properties END
 
-    String getWorkspaceName(AbstractBuild<?,?> build, Computer computer) {
-        normalizedWorkspaceName = workspaceName;
-        if (build != null) {
-            normalizedWorkspaceName = substituteBuildParameter(build, normalizedWorkspaceName);
-            normalizedWorkspaceName = Util.replaceMacro(normalizedWorkspaceName, new BuildVariableResolver(build.getProject(), computer));
-        }
+    String getWorkspaceName(EnvVars env) {
+        String normalizedWorkspaceName = workspaceName;
+        normalizedWorkspaceName = env.expand(normalizedWorkspaceName);
         normalizedWorkspaceName = normalizedWorkspaceName.replaceAll("[\"/:<>\\|\\*\\?]+", "_");
         normalizedWorkspaceName = normalizedWorkspaceName.replaceAll("[\\.\\s]+$", "_");
         return normalizedWorkspaceName;
     }
 
-    public String getServerUrl(Run<?,?> run) {
-        return substituteBuildParameter(run, serverUrl);
+    public String getServerUrl(EnvVars env) {
+        return env.expand(serverUrl);
     }
 
-    String getProjectPath(Run<?,?> run) {
-        return Util.replaceMacro(substituteBuildParameter(run, projectPath), new BuildVariableResolver(run.getParent()));
+    String getProjectPath(EnvVars env) {
+        return env.expand(projectPath);
     }
-
-    private String substituteBuildParameter(Run<?,?> run, String text) {
-        if (run instanceof AbstractBuild<?, ?>){
-            AbstractBuild<?,?> build = (AbstractBuild<?, ?>) run;
-            if (build.getAction(ParametersAction.class) != null) {
-                return build.getAction(ParametersAction.class).substitute(build, text);
-            }
-        }
-        return text;
-    }
-    
+   
     @Override
     public boolean checkout(AbstractBuild<?, ?> build, Launcher launcher, FilePath workspaceFilePath, BuildListener listener, File changelogFile) throws IOException, InterruptedException {
-        Server server = createServer(launcher, listener, build);
+        EnvVars env = build.getEnvironment(listener);
+        Server server = createServer(launcher, listener, env);
         try {
-            WorkspaceConfiguration workspaceConfiguration = new WorkspaceConfiguration(server.getUrl(), getWorkspaceName(build, Computer.currentComputer()), getProjectPath(build), getLocalPath());
+            WorkspaceConfiguration workspaceConfiguration = new WorkspaceConfiguration(server.getUrl(), getWorkspaceName(env), getProjectPath(env), getLocalPath());
             
             final AbstractBuild<?, ?> previousBuild = build.getPreviousBuild();
             // Check if the configuration has changed
@@ -278,9 +261,10 @@ public class TeamFoundationServerScm extends SCM {
         if (lastRun == null) {
             return true;
         } else {
-            Server server = createServer(launcher, listener, lastRun);
+            EnvVars env = lastRun.getEnvironment(listener);
+            Server server = createServer(launcher, listener, env);
             try {
-                return (server.getProject(getProjectPath(lastRun)).getDetailedHistory(
+                return (server.getProject(getProjectPath(env)).getDetailedHistory(
                             lastRun.getTimestamp(), 
                             Calendar.getInstance()
                         ).size() > 0);
@@ -322,8 +306,9 @@ public class TeamFoundationServerScm extends SCM {
         BuildWorkspaceConfiguration configuration = new BuildWorkspaceConfigurationRetriever().getLatestForNode(node, lastRun);
         if ((configuration != null) && configuration.workspaceExists()) {
             LogTaskListener listener = new LogTaskListener(logger, Level.INFO);
-            Launcher launcher = node.createLauncher(listener);        
-            Server server = createServer(launcher, listener, lastRun);
+            Launcher launcher = node.createLauncher(listener);
+            EnvVars env = lastRun.getEnvironment(listener);
+            Server server = createServer(launcher, listener, env);
             try {
                 if (new RemoveWorkspaceAction(configuration.getWorkspaceName()).remove(server)) {
                     configuration.setWorkspaceWasRemoved();
@@ -336,8 +321,8 @@ public class TeamFoundationServerScm extends SCM {
         return true;
     }
     
-    protected Server createServer(final Launcher launcher, final TaskListener taskListener, Run<?,?> run) throws IOException {
-        return new Server(launcher, taskListener, getServerUrl(run), getUserName(), getUserPassword());
+    protected Server createServer(final Launcher launcher, final TaskListener taskListener, EnvVars env) throws IOException {
+        return new Server(launcher, taskListener, getServerUrl(env), getUserName(), getUserPassword());
     }
 
     @Override
@@ -368,6 +353,7 @@ public class TeamFoundationServerScm extends SCM {
     @Override
     public void buildEnvVars(AbstractBuild<?,?> build, Map<String, String> env) {
         super.buildEnvVars(build, env);
+        String normalizedWorkspaceName = getWorkspaceName(new EnvVars(env));
         if (normalizedWorkspaceName != null) {
             env.put(WORKSPACE_ENV_STR, normalizedWorkspaceName);
         }
@@ -492,7 +478,8 @@ public class TeamFoundationServerScm extends SCM {
             return PollingResult.BUILD_NOW;
         }
         Run<?, ?> build = project.getLastBuild();
-        final Server server = createServer(localLauncher, listener, build);
+        EnvVars env = build.getEnvironment(listener);
+        final Server server = createServer(localLauncher, listener, env);
         final Project tfsProject = server.getProject(projectPath);
         try {
             final ChangeSet latest = tfsProject.getLatestChangeset();
