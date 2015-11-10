@@ -8,6 +8,7 @@ import java.util.Map;
 import hudson.plugins.tfs.commands.DeleteWorkspaceCommand;
 import hudson.plugins.tfs.commands.ListWorkspacesCommand;
 import hudson.plugins.tfs.commands.NewWorkspaceCommand;
+import java.util.Locale;
 
 /**
  * Class that creates, deletes and gets workspaces from a TeamFoundationServer.
@@ -40,7 +41,7 @@ public class Workspaces implements ListWorkspacesCommand.WorkspaceFactory {
     private void populateMapFromServer() {
         if (!mapIsPopulatedFromServer) {
             for (Workspace workspace : getListFromServer()) {
-                workspaces.put(workspace.getName(), workspace);
+                workspaces.put(workspace.getName().toLowerCase(Locale.ROOT), workspace);
             }
             mapIsPopulatedFromServer = true;
         }
@@ -52,6 +53,7 @@ public class Workspaces implements ListWorkspacesCommand.WorkspaceFactory {
      * @return the workspace with the specified name; null if it wasnt found
      */
     public Workspace getWorkspace(String workspaceName) {
+        workspaceName = workspaceName.toLowerCase(Locale.ROOT);
         if (!workspaces.containsKey(workspaceName)) {
             populateMapFromServer();
         }
@@ -64,6 +66,7 @@ public class Workspaces implements ListWorkspacesCommand.WorkspaceFactory {
      * @return true if the workspace exists on server; false otherwise
      */
     public boolean exists(String workspaceName) {
+        workspaceName = workspaceName.toLowerCase(Locale.ROOT);
         if (!workspaces.containsKey(workspaceName)) {
             populateMapFromServer();
         }
@@ -90,7 +93,7 @@ public class Workspaces implements ListWorkspacesCommand.WorkspaceFactory {
         NewWorkspaceCommand command = new NewWorkspaceCommand(server, workspaceName, serverPath, localPath);
         server.execute(command.getCallable());
         Workspace workspace = new Workspace(workspaceName);
-        workspaces.put(workspaceName, workspace);
+        workspaces.put(workspaceName.toLowerCase(Locale.ROOT), workspace);
         return workspace;
     }
 
@@ -100,7 +103,7 @@ public class Workspaces implements ListWorkspacesCommand.WorkspaceFactory {
      */
     public void deleteWorkspace(Workspace workspace) {
         DeleteWorkspaceCommand command = new DeleteWorkspaceCommand(server, workspace.getName());
-        workspaces.remove(workspace.getName());
+        workspaces.remove(workspace.getName().toLowerCase(Locale.ROOT));
         server.execute(command.getCallable());
     }
 
