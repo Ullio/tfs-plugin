@@ -9,6 +9,7 @@ import com.microsoft.tfs.core.clients.versioncontrol.soapextensions.VersionContr
 import com.microsoft.tfs.core.clients.versioncontrol.soapextensions.Workspace;
 import com.microsoft.tfs.core.clients.versioncontrol.specs.version.ChangesetVersionSpec;
 import com.microsoft.tfs.jni.helpers.LocalHost;
+import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Functions;
 import hudson.Launcher;
@@ -51,7 +52,6 @@ import javax.xml.xpath.XPathExpressionException;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.GregorianCalendar;
@@ -380,8 +380,8 @@ public class FunctionalTest {
 
         // finally, delete the project, which should first remove the workspace
         final TeamFoundationServerScm scm = (TeamFoundationServerScm) project.getScm();
-        final Computer computer = Computer.currentComputer();
-        final String workspaceName = scm.getWorkspaceName(thirdBuild, computer);
+        final EnvVars env = thirdBuild.getEnvironment(taskListener);
+        final String workspaceName = scm.getWorkspaceName(env);
         Assert.assertTrue(jenkinsWorkspace.exists());
         final String hostName = LocalHost.getShortName();
         final Workspace[] workspacesBeforeDeletion = vcc.queryWorkspaces(workspaceName, VersionControlConstants.AUTHENTICATED_USER, hostName, WorkspacePermissions.NONE_OR_NOT_SUPPORTED);
