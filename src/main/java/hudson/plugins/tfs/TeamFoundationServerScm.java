@@ -175,6 +175,10 @@ public class TeamFoundationServerScm extends SCM {
         return normalizedWorkspaceName;
     }
 
+    String getLocalPath (EnvVars env) {
+        return env.expand (localPath);
+    }
+
     public String getServerUrl(EnvVars env) {
         return env.expand(serverUrl);
     }
@@ -216,7 +220,7 @@ public class TeamFoundationServerScm extends SCM {
         Server server = createServer(launcher, listener, env);
         try {
             //TODO: Ullio Merge
-            WorkspaceConfiguration workspaceConfiguration = new WorkspaceConfiguration(server.getUrl(), getWorkspaceName(env), getProjectPath(env), getCloakPaths(env), getShelveSets(env), getLocalPath());
+            WorkspaceConfiguration workspaceConfiguration = new WorkspaceConfiguration(server.getUrl(), getWorkspaceName(env), getProjectPath(env), getCloakPaths(env), getShelveSets(env), getLocalPath(env));
             
             final AbstractBuild<?, ?> previousBuild = build.getPreviousBuild();
             // Check if the configuration has changed
@@ -406,7 +410,7 @@ public class TeamFoundationServerScm extends SCM {
             env.put(WORKSPACE_ENV_STR, normalizedWorkspaceName);
         }
         if (env.containsKey("WORKSPACE")) {
-            env.put(WORKFOLDER_ENV_STR, env.get("WORKSPACE") + File.separator + getLocalPath());
+            env.put(WORKFOLDER_ENV_STR, env.get("WORKSPACE") + File.separator + getLocalPath(new EnvVars (env)));
         }
         if (projectPath != null) {
             env.put(PROJECTPATH_ENV_STR, projectPath);
